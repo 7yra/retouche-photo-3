@@ -5,55 +5,69 @@ INPUT_DIR = "photos_a_traiter"
 REF_IMAGE_PATH = "photos_reference/fond_2.png"
 OUTPUT_DIR = "output"
 
+# Réglages prudents pour respecter au maximum la pièce d'origine
+BRIGHTNESS_FACTOR = 1.02
+CONTRAST_FACTOR = 1.03
 
-def find_subject_bbox(img):
-    """
-    Détection simple du sujet principal par différence avec la couleur du bord.
-    Suppose que le fond de l'image source est relativement uniforme.
-    Retourne une bounding box (left, top, right, bottom).
-    """
-    rgba = img.convert("RGBA")
-    px = rgba.load()
-    w, h = rgba.size
+# Taille max de la pièce par rapport à la référence
+# Valeur prudente pour éviter les déformations visuelles
+MAX_SUBJECT_WIDTH_RATIO = 0.72
+MAX_SUBJECT_HEIGHT_RATIO = 0.72
 
-    # Couleur moyenne approximative des coins
+# Tolérance de détection du fond
+BACKGROUND_TOLERANCE = 28
+
+
+def average_corner_color(img):
+    px = img.load()
+    w, h = img.size
     corners = [
         px[0, 0],
         px[w - 1, 0],
         px[0, h - 1],
         px[w - 1, h - 1],
     ]
+    return tuple(sum(c[i] for c in corners) // 4 for i in range(4))
 
-    avg = tuple(sum(c[i] for c in corners) // 4 for i in range(4))
 
-    def is_background(c):
-        # Tolérance simple
-        return (
-            abs(c[0] - avg[0]) < 35
-            and abs(c[1] - avg[1]) < 35
-            and abs(c[2] - avg[2]) < 35
-        )
+def is_background(pixel, bg):
+    return (
+        abs(pixel[0] - bg[0]) <= BACKGROUND_TOLERANCE
+        and abs(pixel[1] - bg[1]) <= BACKGROUND_TOLERANCE
+        and abs(pixel[2] - bg[2]) <= BACKGROUND_TOLERANCE
+    )
+
+
+def find_subject_bbox(img):
+    """
+    Détection prudente du sujet principal.
+    On suppose que le fond source est plus uniforme que la pièce.
+    """
+    img = img.convert("RGBA")
+    px = img.load()
+    w, h = img.size
+    bg = average_corner_color(img)
 
     xs = []
     ys = []
 
     for y in range(h):
         for x in range(w):
-            c = px[x, y]
-            if not is_background(c):
+            pixel = px[x, y]
+            if not is_background(pixel, bg):
                 xs.append(x)
                 ys.append(y)
 
     if not xs or not ys:
-        # fallback : toute l'image
-        return (0, 0, w, h)
+        return 0, 0, w, h
 
-    left = max(min(xs) - 5, 0)
-    top = max(min(ys) - 5, 0)
-    right = min(max(xs) + 5, w)
-    bottom = min(max(ys) + 5, h)
+    margin = 4
+    left = max(min(xs) - margin, 0)
+    top = max(min(ys) - margin, 0)
+    right = min(max(xs) + margin + 1, w)
+    bottom = min(max(ys) + margin + 1, h)
 
-    return (left, top, right, bottom)
+    return left, top, right, bottom
 
 
 def crop_subject(img):
@@ -62,52 +76,88 @@ def crop_subject(img):
 
 
 def adjust_piece(piece):
+    """
+    Ajustements très légers seulement.
+    Pas de sharpening, pas de lissage, pas de suppression agressive.
+    """
     enhancer = ImageEnhance.Brightness(piece)
-    piece = enhancer.enhance(1.03)
+    piece = enhancer.enhance(BRIGHTNESS_FACTOR)
 
     enhancer = ImageEnhance.Contrast(piece)
-    piece = enhancer.enhance(1.04)
+    piece = enhancer.enhance(CONTRAST_FACTOR)
 
     return piece
 
 
-def fit_subject_to_reference(piece, ref_img):
+def fit_subject(piece, ref_img):
     """
-    Place la pièce au centre sur le fond de référence
-    en gardant les proportions.
+    Garde strictement les proportions.
+    Redimensionne la pièce sans la déformer.
     """
     ref_w, ref_h = ref_img.size
-    piece_w, piece_h = piece.size
+    pw, ph = piece.size
 
-    # On garde une marge pour éviter que la pièce touche les bords
-    max_w = int(ref_w * 0.78)
-    max_h = int(ref_h * 0.78)
+    max_w = int(ref_w * MAX_SUBJECT_WIDTH_RATIO)
+    max_h = int(ref_h * MAX_SUBJECT_HEIGHT_RATIO)
 
-    scale = min(max_w / piece_w, max_h / piece_h)
-    new_w = max(1, int(piece_w * scale))
-    new_h = max(1, int(piece_h * scale))
+    scale = min(max_w / pw, max_h / ph)
+    new_w = max(1, int(pw * scale))
+    new_h = max(1, int(ph * scale))
 
-    piece_resized = piece.resize((new_w, new_h), Image.LANCZOS)
+    resized = piece.resize((new_w, new_h), Image.LANCZOS)
 
     x = (ref_w - new_w) // 2
     y = (ref_h - new_h) // 2
 
-    return piece_resized, x, y
+    return resized, x, y
+
+
+def ensure_square_reference(ref_img):
+    """
+    Si la référence n'est pas carrée, on la centre sur un fond carré
+    en reprenant sa propre couleur moyenne de bord.
+    """
+    ref = ref_img.convert("RGBA")
+    w, h = ref.size
+
+    if w == h:
+        return ref
+
+    size = max(w, h)
+    bg = average_corner_color(ref)
+    square = Image.new("RGBA", (size, size), bg)
+
+    x = (size - w) // 2
+    y = (size - h) // 2
+    square.paste(ref, (x, y), ref)
+
+    return square
+
+
+def compose_on_reference(piece, ref_img):
+    """
+    Colle la pièce sur le fond de référence sans changer son angle
+    ni ses proportions.
+    """
+    base = ensure_square_reference(ref_img).copy()
+    piece_resized, x, y = fit_subject(piece, base)
+    base.paste(piece_resized, (x, y), piece_resized)
+    return base
 
 
 def process_image(input_path, ref_img):
     src = Image.open(input_path).convert("RGBA")
-    ref = ref_img.convert("RGBA").copy()
 
+    # Extraction prudente du sujet
     piece = crop_subject(src)
+
+    # Ajustements légers
     piece = adjust_piece(piece)
 
-    piece_resized, x, y = fit_subject_to_reference(piece, ref)
+    # Composition finale
+    result = compose_on_reference(piece, ref_img)
 
-    # Si l'image source n'a pas de vraie transparence, on colle comme opaque
-    ref.paste(piece_resized, (x, y), piece_resized)
-
-    return ref
+    return result
 
 
 def main():
@@ -133,9 +183,8 @@ def main():
 
     for filename in files:
         input_path = os.path.join(INPUT_DIR, filename)
-
-        base, _ = os.path.splitext(filename)
-        output_path = os.path.join(OUTPUT_DIR, f"{base}.jpg")
+        name, _ = os.path.splitext(filename)
+        output_path = os.path.join(OUTPUT_DIR, f"{name}.jpg")
 
         result = process_image(input_path, ref_img)
         result.convert("RGB").save(output_path, "JPEG", quality=95)
