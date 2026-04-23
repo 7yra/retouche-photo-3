@@ -7,20 +7,20 @@ OUTPUT_DIR = "output"
 
 
 def process_image(input_path, ref_img):
-    img = Image.open(input_path).convert("RGBA")
+        img = Image.open(input_path).convert("RGBA")
 
-    enhancer = ImageEnhance.Brightness(img)
-    img = enhancer.enhance(1.05)
+        enhancer = ImageEnhance.Brightness(img)
+        img = enhancer.enhance(1.05)
 
-    enhancer = ImageEnhance.Contrast(img)
-    img = enhancer.enhance(1.05)
+        enhancer = ImageEnhance.Contrast(img)
+        img = enhancer.enhance(1.05)
 
-    img = img.resize(ref_img.size)
+        img = img.resize(ref_img.size)
 
-    background = ref_img.copy()
-    background.paste(img, (0, 0), img)
+        background = ref_img.copy()
+        background.paste(img, (0, 0), img)
 
-    return background
+        return background
 
 
 def main():
