@@ -5,51 +5,49 @@ INPUT_DIR = "photos_a_traiter"
 REF_IMAGE_PATH = "photos_reference/fond_2.png"
 OUTPUT_DIR = "output"
 
-os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 def process_image(input_path, ref_img):
-img = Image.open(input_path).convert("RGBA")
+    img = Image.open(input_path).convert("RGBA")
 
-```
-# Ajustement léger luminosité / contraste
-enhancer = ImageEnhance.Brightness(img)
-img = enhancer.enhance(1.05)
+    enhancer = ImageEnhance.Brightness(img)
+    img = enhancer.enhance(1.05)
 
-enhancer = ImageEnhance.Contrast(img)
-img = enhancer.enhance(1.05)
+    enhancer = ImageEnhance.Contrast(img)
+    img = enhancer.enhance(1.05)
 
-# Redimensionnement pour correspondre au fond
-img = img.resize(ref_img.size)
+    img = img.resize(ref_img.size)
 
-# Fusion simple (collage centré)
-background = ref_img.copy()
-background.paste(img, (0, 0), img)
+    background = ref_img.copy()
+    background.paste(img, (0, 0), img)
 
-return background
-```
+    return background
+
 
 def main():
-if not os.path.exists(REF_IMAGE_PATH):
-raise Exception("Image de référence manquante")
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-```
-ref_img = Image.open(REF_IMAGE_PATH).convert("RGBA")
+    if not os.path.exists(REF_IMAGE_PATH):
+        raise Exception("Image de référence manquante")
 
-files = [f for f in os.listdir(INPUT_DIR) if f.lower().endswith((".png", ".jpg", ".jpeg"))]
+    ref_img = Image.open(REF_IMAGE_PATH).convert("RGBA")
 
-if not files:
-    raise Exception("Aucune image à traiter")
+    files = [
+        f for f in os.listdir(INPUT_DIR)
+        if f.lower().endswith((".png", ".jpg", ".jpeg"))
+    ]
 
-for filename in files:
-    input_path = os.path.join(INPUT_DIR, filename)
-    output_path = os.path.join(OUTPUT_DIR, filename)
+    if not files:
+        raise Exception("Aucune image à traiter")
 
-    result = process_image(input_path, ref_img)
-    result.convert("RGB").save(output_path, "JPEG")
+    for filename in files:
+        input_path = os.path.join(INPUT_DIR, filename)
+        output_path = os.path.join(OUTPUT_DIR, filename)
 
-    print(f"Traité: {filename}")
-```
+        result = process_image(input_path, ref_img)
+        result.convert("RGB").save(output_path, "JPEG")
 
-if **name** == "**main**":
-main()
+        print(f"Traité: {filename}")
 
+
+if __name__ == "__main__":
+    main()
